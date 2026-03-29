@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Gateway/Dispatcher Servisi
+  dispatcher:
+    build: ./dispatcher
+    ports:
+      - "8080:8080" # Senin tarayıcın/Postman buraya bağlanacak
+    depends_on:
+      - auth-service
+      - event-service
+    networks:
+      - ticket-net
+
+  # Auth Servisi
+  auth-service:
+    build: ./auth-service
+    depends_on:
+      - db-auth # DB ayağa kalkmadan servis kalkmasın
+    networks:
+      - ticket-net
+
+  # Event Servisi
+  event-service:
+    build: ./event-service
+    depends_on:
+      - db-event
+    networks:
+      - ticket-net
+
+  # Mongodb 1 (Auth için izole)
+  db-auth:
+    image: mongo:latest
+    # ports: ["27018:27017"] # Gerekirse dışarıdan bakmak için açılabilir
+    networks:
+      - ticket-net
+    volumes:
+      - auth_data:/data/db # Konteyner silinse bile veriler kaybolmaz
+
+  # Mongodb 2 (Event için izole)
+  db-event:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - event_data:/data/db
+
+networks:
+  ticket-net:
+    driver: bridge
+
+volumes:
+  auth_data:
+  event_data:
