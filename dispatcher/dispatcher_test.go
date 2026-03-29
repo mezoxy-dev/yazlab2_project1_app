@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,91 +11,115 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Test için kullanılacak gizli anahtar
+// Test için sabit gizli anahtar
 const testSecret = "gizli_anahtar_oguzhan"
 
-// Yardımcı fonksiyon: Test için geçerli bir Token üretir
-func generateTestToken(username string) string {
+// Testler için JWT üretir
+func generateTestToken(username string, role string) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": username,
-		"exp": time.Now().Add(time.Hour).Unix(),
+		"sub":  username,
+		"role": role,
+		"exp":  time.Now().Add(time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
 	})
 	tokenString, _ := token.SignedString([]byte(testSecret))
-	return tokenString
+	return fmt.Sprintf("Bearer %s", tokenString)
 }
 
+// Dispatcher'ın güvenlik mekanizmasını test eder
 func TestDispatcherSecurity(t *testing.T) {
-	// Test ortamı için Environment Variable ayarla
+	// Dispatcher'ın okuduğu ortam değişkenini ayarla
 	os.Setenv("JWT_SECRET", testSecret)
 
-	t.Run("Token Yoksa 401 Donmeli", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/events", nil)
-		rr := httptest.NewRecorder()
-		
-		handler := AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
+	// AuthMiddleware'ı test etmek için basit bir handler oluştura
+	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Success"))
+	})
+	handlerToTest := AuthMiddleware(mockHandler)
 
-		handler.ServeHTTP(rr, req)
+	t.Run("Login/Register Token Gerektirmemeli", func(t *testing.T) {
+		publicRoutes := []string{"/login", "/register"}
+		for _, route := range publicRoutes {
+			req, _ := http.NewRequest("POST", route, nil)
+			rr := httptest.NewRecorder()
+			handlerToTest.ServeHTTP(rr, req)
 
-		if status := rr.Code; status != http.StatusUnauthorized {
-			t.Errorf("Token yokken 401 bekleniyordu, %v alindi", status)
+			if rr.Code != http.StatusOK {
+				t.Errorf("%s rotası tokensız geçmeliydi, ancak %v alındı", route, rr.Code)
+			}
 		}
 	})
 
-	t.Run("Gecerli Token ile GET Basarili Olmali", func(t *testing.T) {
-		token := generateTestToken("oguzhan")
+	t.Run("Korumalı Rotada Token Yoksa 401 Dönmeli", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/events", nil)
-		req.Header.Set("Authorization", token) // Token'ı ekle
-
 		rr := httptest.NewRecorder()
-		handler := AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
+		handlerToTest.ServeHTTP(rr, req)
 
-		handler.ServeHTTP(rr, req)
-
-		if status := rr.Code; status != http.StatusOK {
-			t.Errorf("Gecerli token ile 200 bekleniyordu, %v alindi", status)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("Korumalı rota tokensız 401 vermeliydi, ancak %v alındı", rr.Code)
 		}
 	})
 
-	t.Run("Gecerli Token ile POST (Bodyli) Basarili Olmali", func(t *testing.T) {
-		token := generateTestToken("oguzhan")
-		jsonBody := []byte(`{"event_id": "konser123", "seats": 2}`)
+	t.Run("Hatalı Token (Yanlış Secret) 401 Dönmeli", func(t *testing.T) {
+		// Yanlış bir secret ile token üret
+		wrongToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": "test"})
+		ts, _ := wrongToken.SignedString([]byte("yanlis_secret"))
 		
-		req, _ := http.NewRequest("POST", "/booking", bytes.NewBuffer(jsonBody))
+		req, _ := http.NewRequest("GET", "/events", nil)
+		req.Header.Set("Authorization", "Bearer "+ts)
+		rr := httptest.NewRecorder()
+		handlerToTest.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("Hatalı token 401 vermeliydi, ancak %v alındı", rr.Code)
+		}
+	})
+
+	t.Run("Gecerli Token ile GET Basarılı Olmalı", func(t *testing.T) {
+		token := generateTestToken("oguzhan", "user")
+		req, _ := http.NewRequest("GET", "/events", nil)
+		req.Header.Set("Authorization", token)
+
+		rr := httptest.NewRecorder()
+		handlerToTest.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("Geçerli token ile 200 bekleniyordu, %v alındı", rr.Code)
+		}
+	})
+
+	t.Run("Gecerli Token ile POST + Body Basarılı Olmalı", func(t *testing.T) {
+		token := generateTestToken("oguzhan", "user")
+		body := []byte(`{"event_id": "1", "seats": 1}`)
+		req, _ := http.NewRequest("POST", "/booking", bytes.NewBuffer(body))
 		req.Header.Set("Authorization", token)
 		req.Header.Set("Content-Type", "application/json")
 
 		rr := httptest.NewRecorder()
-		handler := AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusCreated)
-		}))
+		handlerToTest.ServeHTTP(rr, req)
 
-		handler.ServeHTTP(rr, req)
-
-		if status := rr.Code; status != http.StatusCreated {
-			t.Errorf("POST istegi basarisiz oldu, durum kodu: %v", status)
+		if rr.Code != http.StatusOK {
+			t.Errorf("POST isteği başarısız, durum kodu: %v", rr.Code)
 		}
 	})
 }
 
 func TestProxyRouting(t *testing.T) {
-	// 1. Sahte bir arka uç (backend) servisi oluştur
+	// Sahte bir hedef servis (örneğin event-service) simüle et
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Backend Response"))
+		w.Write([]byte("Proxied Content"))
 	}))
 	defer backend.Close()
 
-	// 2. Dispatcher'ın yönlendirmesini test et
 	req := httptest.NewRequest("GET", "/events", nil)
 	rr := httptest.NewRecorder()
 
+	// ProxyHandler'ın gelen isteği backend'e iletip iletmediğini ölç
 	ProxyHandler(rr, req, backend.URL)
 
-	if rr.Body.String() != "Backend Response" {
-		t.Errorf("Beklenen yanit gelmedi: %s", rr.Body.String())
+	if rr.Body.String() != "Proxied Content" {
+		t.Errorf("Proxy yönlendirmesi başarısız. Alınan: %s", rr.Body.String())
 	}
 }

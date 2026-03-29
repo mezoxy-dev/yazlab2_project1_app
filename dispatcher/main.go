@@ -6,6 +6,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 	"github.com/golang-jwt/jwt/v5" 
 )
@@ -13,23 +14,33 @@ import (
 // AuthMiddleware: JWT kontrolü yapar
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CORS ön kontrol isteklerine izin ver
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+            w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            return
+        }
+
 		// Login rotasına herkes erişebilmeli (Token alabilmek için)
 		if (r.URL.Path == "/login" || r.URL.Path == "/register"){	
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		tokenString := r.Header.Get("Authorization")
-		if tokenString == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error": "Token bulunamadı"}`))
 			return
 		}
 
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
 		// Token Doğrulama
 		secret := os.Getenv("JWT_SECRET")
 		if secret == "" {
-			secret = "gizli_anahtar_oguzhan" // Eğer Docker'dan gelmezse yedek
+			log.Fatal("KRITIK: JWT_SECRET ortam değişkeni tanımlı değil.")
 		}
 		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 			return []byte(secret), nil
@@ -40,6 +51,15 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			w.Write([]byte(`{"error": "Geçersiz token"}`))
 			return
 		}
+
+		// Kullanıcı bilgisini Header'a ekleyerek iç servislere pasla
+		// İç servisler sadece token doğrulamakla kalmaz, aynı zamanda kullanıcı bilgisine de ihtiyaç duyabilirler (örneğin, kullanıcı adı veya rolü). 
+		// Bu bilgiyi token'dan çıkarıp HTTP header'ına ekleyerek, iç servislerin bu bilgilere kolayca erişmesini sağlarız. 
+		// Böylece, iç servisler sadece token doğrulamakla kalmaz, aynı zamanda kullanıcıya özel işlemler yapabilirler (örneğin, belirli bir rolün erişimine izin vermek gibi).
+        if claims, ok := token.Claims.(jwt.MapClaims); ok {
+            r.Header.Set("X-User-Name", claims["sub"].(string))
+            r.Header.Set("X-User-Role", claims["role"].(string))
+        }
 
 		next.ServeHTTP(w, r)
 	})
@@ -54,6 +74,16 @@ func ProxyHandler(w http.ResponseWriter, r *http.Request, target string) {
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(dest)
+
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		// Sen dispatcher mısın kontrolü yaparak iç servisler arası güvenliği artırıyoruz
+		internalKey := os.Getenv("INTERNAL_GATEWAY_KEY")
+		req.Header.Set("X-Internal-Secret", internalKey)
+	}
+
+
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
 		log.Printf("Hata: Servis ulaşılamıyor: %v", e)
 		w.WriteHeader(http.StatusServiceUnavailable)
