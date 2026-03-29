@@ -5,15 +5,16 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"time"
-	"github.com/golang-jwt/jwt/v5" // <--- Eksik olan buydu
+	"github.com/golang-jwt/jwt/v5" 
 )
 
 // AuthMiddleware: JWT kontrolü yapar
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Login rotasına herkes erişebilmeli (Token alabilmek için)
-		if r.URL.Path == "/login" {
+		if (r.URL.Path == "/login" || r.URL.Path == "/register"){	
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -26,8 +27,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Token Doğrulama
+		secret := os.Getenv("JWT_SECRET")
+		if secret == "" {
+			secret = "gizli_anahtar_oguzhan" // Eğer Docker'dan gelmezse yedek
+		}
 		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-			return []byte("gizli_anahtar_oguzhan"), nil
+			return []byte(secret), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -40,6 +45,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// ProxyHandler: İstekleri ilgili servislere yönlendirir
 func ProxyHandler(w http.ResponseWriter, r *http.Request, target string) {
 	dest, err := url.Parse(target)
 	if err != nil {
@@ -64,12 +70,16 @@ func main() {
         ProxyHandler(w, r, "http://auth-service:8081")
     })
 
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		ProxyHandler(w, r, "http://auth-service:8081")
+	})
+
     mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
-        ProxyHandler(w, r, "http://event-service:8081")
+        ProxyHandler(w, r, "http://event-service:8082")
     })
 
     mux.HandleFunc("/booking", func(w http.ResponseWriter, r *http.Request) {
-        ProxyHandler(w, r, "http://booking-service:8082")
+        ProxyHandler(w, r, "http://booking-service:8083")
     })
 
     // Loglama için bir middleware daha ekleyelim (Opsiyonel ama rapor için güzel durur)
@@ -80,7 +90,7 @@ func main() {
             next.ServeHTTP(w, r)
             log.Printf("İSTEK BİTTİ: %s | Süre: %v", r.URL.Path, time.Since(start))
         })
-    }
+    }	
 
     // Sıralama: Önce Logla -> Sonra Auth Kontrol Et -> Sonra Rotalara Gönder
     finalHandler := loggingMiddleware(AuthMiddleware(mux))

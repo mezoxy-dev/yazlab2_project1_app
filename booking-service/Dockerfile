@@ -1,4 +1,4 @@
-# auth-service/Dockerfile
+# booking-service/Dockerfile
 FROM golang:latest AS builder
 
 WORKDIR /app
@@ -23,8 +23,8 @@ WORKDIR /root/
 # Builder aşamasında oluşturduğumuz 'main' dosyasını buraya kopyalıyoruz.
 COPY --from=builder /app/main .
 
-# Auth Service 8081 portunda çalışacak demiştik.
-EXPOSE 8081
+# Booking Service 8083 portunda çalışacak demiştik.
+EXPOSE 8083
 
 # Uygulamayı başlatıyoruz.
 CMD ["./main"]

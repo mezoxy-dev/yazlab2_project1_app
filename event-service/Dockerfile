@@ -1,4 +1,4 @@
-# dispatcher/Dockerfile
+# event-service/Dockerfile
 FROM golang:latest AS builder
 
 WORKDIR /app
@@ -8,6 +8,8 @@ COPY go.mod go.sum* ./
 RUN go mod download
 
 COPY . .
+
+RUN go test -v ./...
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
@@ -21,8 +23,8 @@ WORKDIR /root/
 # Builder aşamasında oluşturduğumuz 'main' dosyasını buraya kopyalıyoruz.
 COPY --from=builder /app/main .
 
-# Dispatcher 8080 portunda çalışacak demiştik.
-EXPOSE 8080
+# Event Service 8082 portunda çalışacak demiştik.
+EXPOSE 8082
 
 # Uygulamayı başlatıyoruz.
 CMD ["./main"]
