@@ -42,12 +42,15 @@ services:
   # Booking Service (Bilet alma/Rezervasyon servisi)
   booking-service:
     build: ./booking-service
+    container_name: booking_api
     environment:
       - MONGO_URI=mongodb://db-booking:27017
       # Booking servisi, Event servisine bilet sormak için bu adresi kullanacak.
       - EVENT_SERVICE_URL=http://event-service:8082
     depends_on:
       - db-booking
+    ports:
+      - "8083:8083"
     networks:
       - ticket-net
 
@@ -69,6 +72,7 @@ services:
 
   db-booking:
     image: mongo:latest
+    container_name: db-booking
     networks:
       - ticket-net
     volumes:
