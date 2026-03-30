@@ -1,60 +1,70 @@
 version: '3.8'
 
 services:
-  # Gateway (Tüm isteklerin girdiği ana kapı)
   dispatcher:
     build: ./dispatcher
     ports:
-      - "8080:8080"
+      - "8080:8080" 
     environment:
-      # Dispatcher, gelen biletin (token) mührünü bu anahtarla kontrol eder.
+      - MONGO_URI=mongodb://db-auth:27017
       - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
     depends_on:
+      - db-dispatcher
       - auth-service
       - event-service
       - booking-service
     networks:
       - ticket-net
 
-  # Auth Service (Bilet basan/Token üreten servis)
   auth-service:
     build: ./auth-service
     environment:
-      # Docker ağı sayesinde "db-auth" ismini IP gibi kullanıyoruz.
       - MONGO_URI=mongodb://db-auth:27017
-      # Bu anahtar, bilete (token) mühür basmak için kullanılır.
       - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
+      - ADMIN_REGISTRATION_SECRET=admin_kayit_gizli_anahtari_2026
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
     depends_on:
       - db-auth
     networks:
       - ticket-net
 
-  # Event Service (Etkinlik listesini tutan servis)
   event-service:
     build: ./event-service
     environment:
       - MONGO_URI=mongodb://db-event:27017
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
     depends_on:
       - db-event
     networks:
       - ticket-net
 
-  # Booking Service (Bilet alma/Rezervasyon servisi)
   booking-service:
     build: ./booking-service
-    container_name: booking_api
     environment:
       - MONGO_URI=mongodb://db-booking:27017
-      # Booking servisi, Event servisine bilet sormak için bu adresi kullanacak.
       - EVENT_SERVICE_URL=http://event-service:8082
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
     depends_on:
       - db-booking
+    networks:
+      - ticket-net
+    
+  ui-dashboard:
+    build: ./ui-dashboard
     ports:
-      - "8083:8083"
+      - "3000:80"
+    depends_on:
+      - dispatcher
     networks:
       - ticket-net
 
-  # MongoDB Servisleri (Her servis için ayrı MongoDB konteyneri)
+  db-dispatcher:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - dispatcher_data:/data/db
 
   db-auth:
     image: mongo:latest
@@ -72,19 +82,17 @@ services:
 
   db-booking:
     image: mongo:latest
-    container_name: db-booking
     networks:
       - ticket-net
     volumes:
       - booking_data:/data/db
 
-# Ağ Ayarları (Servislerin birbirini isimle bulmasını sağlar)
 networks:
   ticket-net:
     driver: bridge
 
-# Veri Kalıcılığı (Konteyner silinse de MongoDB verilerin gitmez)
 volumes:
+  dispatcher_data:
   auth_data:
   event_data:
   booking_data:
