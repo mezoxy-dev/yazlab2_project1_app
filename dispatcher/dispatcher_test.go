@@ -61,6 +61,21 @@ func TestDispatcherSecurity(t *testing.T) {
 		}
 	})
 
+	// Token doğrulama ve rol ekleme testleri
+	t.Run("Gecerli Token ile Rol Header'a Eklenmeli", func(t *testing.T) {
+		token := generateTestToken("oguzhan", "admin")
+		req, _ := http.NewRequest("GET", "/events", nil)
+		req.Header.Set("Authorization", token)
+
+		finalHandler := AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-User-Role") != "admin" {
+				t.Errorf("Rol header'a eklenemedi")
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		finalHandler.ServeHTTP(httptest.NewRecorder(), req)
+	})
+
 	t.Run("Hatalı Token (Yanlış Secret) 401 Dönmeli", func(t *testing.T) {
 		// Yanlış bir secret ile token üret
 		wrongToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": "test"})
@@ -104,6 +119,43 @@ func TestDispatcherSecurity(t *testing.T) {
 		}
 	})
 }
+
+// Stats Erişimi Testleri
+func TestAdminStatsAccess(t *testing.T) {
+	os.Setenv("JWT_SECRET", testSecret)
+	
+	mux := http.NewServeMux()
+	mux.HandleFunc("/admin/stats", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-User-Role") != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	
+	handler := AuthMiddleware(mux)
+
+	t.Run("Admin Stats Görebilmeli", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/admin/stats", nil)
+		req.Header.Set("Authorization", generateTestToken("admin", "admin"))
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("Admin erişemedi: %v", rr.Code)
+		}
+	})
+
+	t.Run("Normal Kullanıcı Stats Görememeli", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/admin/stats", nil)
+		req.Header.Set("Authorization", generateTestToken("user", "user"))
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("Normal kullanıcı erişebildi: %v", rr.Code)
+		}
+	})
+}
+
 
 func TestProxyRouting(t *testing.T) {
 	// Sahte bir hedef servis (örneğin event-service) simüle et

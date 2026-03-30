@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -14,21 +16,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// InternalOnlyMiddleware: İsteğin sadece Dispatcher (Gateway) üzerinden geldiğini doğrular.
-func InternalOnlyMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		expectedSecret := os.Getenv("INTERNAL_GATEWAY_KEY")
-		providedSecret := r.Header.Get("X-Internal-Secret")
-
-		// Eğer anahtar boşsa veya eşleşmiyorsa erişimi engelle
-		if expectedSecret == "" || providedSecret != expectedSecret {
-			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte(`{"error": "Doğrudan erişim yasaktır. Lütfen Gateway üzerinden erişiniz."}`))
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 // Etkinlik bilgilerini tutan yapı
 type Event struct {
@@ -36,7 +23,7 @@ type Event struct {
 	Name      string             `json:"name" bson:"name"`
 	Location  string             `json:"location" bson:"location"`
 	Capacity  int                `json:"capacity" bson:"capacity"`
-	Available int                `json:"available" bson:"available"` // Satılabilir bilet sayısı
+	Available int                `json:"available" bson:"available"` 
 	Date      string             `json:"date" bson:"date"`
 }
 
@@ -46,6 +33,9 @@ type EventStore interface {
 	CreateEvent(event Event) error
 	GetAllEvents() ([]Event, error)
 	GetEventByID(id string) (*Event, error)
+	UpdateEvent(id string, event Event) error
+	DeleteEvent(id string) error
+	UpdateAvailableTickets(id string, amount int) error
 }
 
 // EventRepository: MongoDB implementasyonu
@@ -87,63 +77,170 @@ func (r *EventRepository) GetEventByID(id string) (*Event, error) {
     return &event, nil
 }
 
+func (r *EventRepository) UpdateEvent(id string, event Event) error {
+	objID, err := primitive.ObjectIDFromHex(id) 
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	update := bson.M{
+		"$set": bson.M{
+			"name":     event.Name,
+			"location": event.Location,
+			"capacity": event.Capacity,
+			"date":     event.Date,
+		},
+	}
+	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
+	return err
+}
+
+
+
+func (r *EventRepository) UpdateAvailableTickets(id string, amount int) error {
+    objID, _ := primitive.ObjectIDFromHex(id)
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    // $inc operatörü ile bilet sayısını azaltıyoruz (-1)
+    filter := bson.M{"_id": objID, "available": bson.M{"$gt": 0}} // Kontenjan 0'dan büyükse
+    update := bson.M{"$inc": bson.M{"available": amount}}
+    
+    result, err := r.collection.UpdateOne(ctx, filter, update)
+    if err != nil {
+        return err
+    }
+    if result.MatchedCount == 0 {
+        return errors.New("etkinlik bulunamadı veya kontenjan yetersiz")
+    }
+    return nil
+}
+
+func (r *EventRepository) DeleteEvent(id string) error {
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = r.collection.DeleteOne(ctx, bson.M{"_id": objID})
+	return err
+}
+
+func getEventID(r *http.Request) string {
+	// Önce path e bakılır: /events/65f... 
+	id := strings.TrimPrefix(r.URL.Path, "/events/")
+	if id != "" && id != "/events" {
+		return id
+	}
+	// Eğer Path boşsa Query Parameter'a bakıyoruz: ?id=65f...	
+	return r.URL.Query().Get("id")
+}
+
 // EventService: Testlerdeki 'service := &EventService{Repo: ...}' yapısına uygun
 type EventService struct {
 	Repo EventStore
 }
 
+// InternalOnlyMiddleware: İsteğin sadece Dispatcher (Gateway) üzerinden geldiğini doğrular.
+func InternalOnlyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		expectedSecret := os.Getenv("INTERNAL_GATEWAY_KEY")
+		providedSecret := r.Header.Get("X-Internal-Secret")
+
+		// Eğer anahtar boşsa veya eşleşmiyorsa erişimi engelle
+		if expectedSecret == "" || providedSecret != expectedSecret {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error": "Doğrudan erişim yasaktır. Lütfen Gateway üzerinden erişiniz."}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+
 func setupRouter(service *EventService) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
-		// GET: Etkinlikleri Listele
-		if r.Method == http.MethodGet {
-			events, err := service.Repo.GetAllEvents()
-			if err != nil {
-				http.Error(w, "Veriler okunamadı", http.StatusInternalServerError)
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		id := getEventID(r)
+
+		if id == "" {
+			if r.Method == http.MethodGet {
+				events, err := service.Repo.GetAllEvents()
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(events)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(events)
-			return
-		}
-
-		// POST: Etkinlik Ekle (Sadece Admin)
-		if r.Method == http.MethodPost {
-			// Dispatcher'dan gelen Header kontrolü (RBAC)
-			role := r.Header.Get("X-User-Role")
-			if role != "admin" {
-				w.WriteHeader(http.StatusForbidden)
-				w.Write([]byte(`{"error": "Yetkisiz işlem: Admin yetkisi gerekli"}`))
-				return
-			}
-
-			var e Event
-			if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
-				http.Error(w, "Geçersiz veri", http.StatusBadRequest)
-				return
-			}
-
-			// İş Mantığı: Yeni bir etkinlikte Available başlangıçta Capacity'e eşittir.
-			if e.Available == 0 {
+			if r.Method == http.MethodPost {
+				if r.Header.Get("X-User-Role") != "admin" {
+					http.Error(w, "Admin yetkisi gerekli", 403)
+					return
+				}
+				var e Event
+				json.NewDecoder(r.Body).Decode(&e)
 				e.Available = e.Capacity
-			}
-
-			if err := service.Repo.CreateEvent(e); err != nil {
-				http.Error(w, "Kaydetme hatası", http.StatusInternalServerError)
+				service.Repo.CreateEvent(e)
+				w.WriteHeader(http.StatusCreated)
 				return
 			}
+		}
 
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]string{"message": "Etkinlik başarıyla oluşturuldu"})
+		if id != "" {
+			switch r.Method {
+			case http.MethodGet:
+				event, err := service.Repo.GetEventByID(id)
+				if err != nil {
+					http.Error(w, "Bulunamadi", 404)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(event)
+			case http.MethodPut:
+				if r.Header.Get("X-User-Role") != "admin" {
+					http.Error(w, "Yetkisiz", 403)
+					return
+				}
+				var e Event
+				json.NewDecoder(r.Body).Decode(&e)
+				service.Repo.UpdateEvent(id, e)
+				w.Write([]byte(`{"message": "Guncellendi"}`))
+			case http.MethodDelete:
+				if r.Header.Get("X-User-Role") != "admin" {
+					http.Error(w, "Yetkisiz", 403)
+					return
+				}
+				service.Repo.DeleteEvent(id)
+				w.WriteHeader(http.StatusNoContent)
+			case http.MethodPatch:
+				var body struct{ Amount int `json:"amount"` }
+				json.NewDecoder(r.Body).Decode(&body)
+				if err := service.Repo.UpdateAvailableTickets(id, body.Amount); err != nil {
+					http.Error(w, err.Error(), 400)
+					return
+				}
+				w.Write([]byte(`{"message": "Kontenjan guncellendi"}`))
+			default:
+				http.Error(w, "Method Not Allowed", 405)
+			}
 			return
 		}
 
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-	})
+		http.Error(w, "Gecersiz istek veya ID eksik", 400)
+	}
+
+	mux.HandleFunc("/events", handler)
+	mux.HandleFunc("/events/", handler)
 
 	return mux
 }
+
 
 func main() {
 	// Ortam değişkenlerinden ayarları oku
