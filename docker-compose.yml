@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Gateway (Tüm isteklerin girdiği ana kapı)
+  dispatcher:
+    build: ./dispatcher
+    ports:
+      - "8080:8080"
+    environment:
+      # Dispatcher, gelen biletin (token) mührünü bu anahtarla kontrol eder.
+      - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
+    depends_on:
+      - auth-service
+      - event-service
+      - booking-service
+    networks:
+      - ticket-net
+
+  # Auth Service (Bilet basan/Token üreten servis)
+  auth-service:
+    build: ./auth-service
+    environment:
+      # Docker ağı sayesinde "db-auth" ismini IP gibi kullanıyoruz.
+      - MONGO_URI=mongodb://db-auth:27017
+      # Bu anahtar, bilete (token) mühür basmak için kullanılır.
+      - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
+    depends_on:
+      - db-auth
+    networks:
+      - ticket-net
+
+  # Event Service (Etkinlik listesini tutan servis)
+  event-service:
+    build: ./event-service
+    environment:
+      - MONGO_URI=mongodb://db-event:27017
+    depends_on:
+      - db-event
+    networks:
+      - ticket-net
+
+  # Booking Service (Bilet alma/Rezervasyon servisi)
+  booking-service:
+    build: ./booking-service
+    environment:
+      - MONGO_URI=mongodb://db-booking:27017
+      # Booking servisi, Event servisine bilet sormak için bu adresi kullanacak.
+      - EVENT_SERVICE_URL=http://event-service:8082
+    depends_on:
+      - db-booking
+    networks:
+      - ticket-net
+
+  # MongoDB Servisleri (Her servis için ayrı MongoDB konteyneri)
+
+  db-auth:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - auth_data:/data/db
+
+  db-event:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - event_data:/data/db
+
+  db-booking:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - booking_data:/data/db
+
+# Ağ Ayarları (Servislerin birbirini isimle bulmasını sağlar)
+networks:
+  ticket-net:
+    driver: bridge
+
+# Veri Kalıcılığı (Konteyner silinse de MongoDB verilerin gitmez)
+volumes:
+  auth_data:
+  event_data:
+  booking_data:
