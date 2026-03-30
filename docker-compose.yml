@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  dispatcher:
+    build: ./dispatcher
+    ports:
+      - "8080:8080" 
+    environment:
+      - MONGO_URI=mongodb://db-auth:27017
+      - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
+    depends_on:
+      - db-dispatcher
+      - auth-service
+      - event-service
+      - booking-service
+    networks:
+      - ticket-net
+
+  auth-service:
+    build: ./auth-service
+    environment:
+      - MONGO_URI=mongodb://db-auth:27017
+      - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
+      - ADMIN_REGISTRATION_SECRET=admin_kayit_gizli_anahtari_2026
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
+    depends_on:
+      - db-auth
+    networks:
+      - ticket-net
+
+  event-service:
+    build: ./event-service
+    environment:
+      - MONGO_URI=mongodb://db-event:27017
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
+    depends_on:
+      - db-event
+    networks:
+      - ticket-net
+
+  booking-service:
+    build: ./booking-service
+    environment:
+      - MONGO_URI=mongodb://db-booking:27017
+      - EVENT_SERVICE_URL=http://event-service:8082
+      - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
+    depends_on:
+      - db-booking
+    networks:
+      - ticket-net
+    
+  ui-dashboard:
+    build: ./ui-dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - dispatcher
+    networks:
+      - ticket-net
+
+  db-dispatcher:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - dispatcher_data:/data/db
+
+  db-auth:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - auth_data:/data/db
+
+  db-event:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - event_data:/data/db
+
+  db-booking:
+    image: mongo:latest
+    networks:
+      - ticket-net
+    volumes:
+      - booking_data:/data/db
+
+networks:
+  ticket-net:
+    driver: bridge
+
+volumes:
+  dispatcher_data:
+  auth_data:
+  event_data:
+  booking_data:
