@@ -33,7 +33,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		allowedOrigins := map[string]bool{
-			"http://localhost:3000": true, 
+			"http://localhost:3000": true,
 			"http://127.0.0.1:3000": true,
 		}
 
@@ -161,10 +161,19 @@ func main() {
 		json.NewEncoder(w).Encode(logs)
 	})
 
+	// --- GÜNCELLENEN ROTALAR ---
+	// Auth Servisi Rotaları
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://auth-service:8081") })
+	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://auth-service:8081") })
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://auth-service:8081") })
+
+	// Event Servisi Rotaları (Çoğul - Taksimli ve Taksimsiz)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://event-service:8082") })
 	mux.HandleFunc("/events/", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://event-service:8082") })
-	mux.HandleFunc("/booking/", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://booking-service:8083") })
+
+	// Booking Servisi Rotaları (Çoğul - Taksimli ve Taksimsiz)
+	mux.HandleFunc("/bookings", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://booking-service:8083") })
+	mux.HandleFunc("/bookings/", func(w http.ResponseWriter, r *http.Request) { ProxyHandler(w, r, "http://booking-service:8083") })
 
 	dbLoggingMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

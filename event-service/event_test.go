@@ -88,7 +88,7 @@ func TestEventService(t *testing.T) {
 
 	mockRepo := &MockEventRepo{}
 	service := &EventService{Repo: mockRepo}
-	
+
 	// Router'ı middleware ile sarmalıyoruz
 	router := InternalOnlyMiddleware(setupRouter(service))
 
@@ -141,7 +141,7 @@ func TestEventService(t *testing.T) {
 		if len(mockRepo.events) == 0 {
 			t.Fatal("Etkinlik kaydedilmedi!")
 		}
-		
+
 		saved := mockRepo.events[len(mockRepo.events)-1]
 		if saved.Location != "Kocaeli" || saved.Date != "2026-05-15" {
 			t.Errorf("Eksik veri kaydedildi: %+v", saved)
@@ -185,7 +185,7 @@ func TestEventService(t *testing.T) {
 
 		patchData := map[string]int{"amount": -1}
 		body, _ := json.Marshal(patchData)
-		
+
 		req := newRequest("PATCH", "/events/"+id, body)
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
@@ -209,6 +209,25 @@ func TestEventService(t *testing.T) {
 
 		if rr.Code != http.StatusNoContent {
 			t.Errorf("204 bekleniyordu, %v alındı", rr.Code)
+		}
+	})
+	t.Run("Eksik veya Hatali Veriyle Etkinlik Eklenememeli (400)", func(t *testing.T) {
+		// İsim boş, kapasite 0 ve lokasyon boş olarak ayarlanıyor
+		eventData := Event{
+			Name:     "",
+			Capacity: 0,
+			Location: "",
+			Date:     "2026-06-01",
+		}
+		body, _ := json.Marshal(eventData)
+		req := newRequest("POST", "/events", body)
+		req.Header.Set("X-User-Role", "admin") // Admin bile olsa eksik veriyi geçirememeli
+
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("Eksik veride 400 Bad Request bekleniyordu, alınan: %v", rr.Code)
 		}
 	})
 }
