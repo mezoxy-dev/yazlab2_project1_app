@@ -5,13 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
-// 2. Test İçin Sahte (Mock) Veri Tabanı
+// 1. Mock Repository (Değişmedi)
 type mockBookingRepo struct {
 	bookings   map[string][]Booking
-	shouldFail bool // Veri tabanı hatası simüle etmek için
+	shouldFail bool
 }
 
 func (m *mockBookingRepo) CreateBooking(booking Booking) (string, error) {
@@ -33,9 +34,35 @@ func (m *mockBookingRepo) GetBookingsByUser(userID string) ([]Booking, error) {
 	return m.bookings[userID], nil
 }
 
-// 4. Test Senaryoları (TDD: Red-Green-Refactor)
+// 2. Test Senaryoları
 func TestCreateBooking(t *testing.T) {
-	t.Run("Gecerli Veri Ile Bilet Alinmali (201 Created)", func(t *testing.T) {
+	// SAHTE EVENT SERVİSİ (Mock Server) OLUŞTURMA
+	mockEventServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// İç güvenlik anahtarını kontrol et
+		if r.Header.Get("X-Internal-Secret") != "test_gizli_anahtar" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		// GET: Etkinlik var mı ve yer var mı kontrolü
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK) // 200 dönerek "yer var" diyoruz
+			return
+		}
+
+		// PATCH: Bilet satıldıktan sonra kapasite düşürme işlemi
+		if r.Method == http.MethodPatch {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}))
+	defer mockEventServer.Close()
+
+	// Ortam değişkenlerini test için ayarla
+	os.Setenv("EVENT_SERVICE_URL", mockEventServer.URL)
+	os.Setenv("INTERNAL_GATEWAY_KEY", "test_gizli_anahtar")
+
+	t.Run("Gecerli Veri ve Event Onayi Ile Bilet Alinmali (201)", func(t *testing.T) {
 		mockRepo := &mockBookingRepo{}
 		handler := NewBookingHandler(mockRepo)
 
@@ -50,11 +77,10 @@ func TestCreateBooking(t *testing.T) {
 		}
 	})
 
-	t.Run("Eksik Veri İle İstek Atilirsa 400 Bad Request Donmeli", func(t *testing.T) {
+	t.Run("Eksik Veri İle İstek Atilirsa 400 Donmeli", func(t *testing.T) {
 		mockRepo := &mockBookingRepo{}
 		handler := NewBookingHandler(mockRepo)
 
-		// seats bilgisi eksik veya 0
 		body := []byte(`{"event_id": "konser123", "user_id": "oguzhan", "seats": 0}`)
 		req := httptest.NewRequest(http.MethodPost, "/bookings", bytes.NewBuffer(body))
 		rr := httptest.NewRecorder()
@@ -66,19 +92,28 @@ func TestCreateBooking(t *testing.T) {
 		}
 	})
 
-	t.Run("Veritabani Hatasi Durumunda 500 Donmeli", func(t *testing.T) {
-		// Mock DB'yi bilerek bozuyoruz
-		mockRepo := &mockBookingRepo{shouldFail: true}
+	t.Run("Event Bulunamazsa veya Yer Yoksa 400 Donmeli", func(t *testing.T) {
+		// Sadece bu test için hata dönen bir sahte sunucu
+		failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound) // Etkinlik yok hatası
+		}))
+		defer failServer.Close()
+		os.Setenv("EVENT_SERVICE_URL", failServer.URL)
+
+		mockRepo := &mockBookingRepo{}
 		handler := NewBookingHandler(mockRepo)
 
-		body := []byte(`{"event_id": "konser123", "user_id": "oguzhan", "seats": 2}`)
+		body := []byte(`{"event_id": "olmayan_konser", "user_id": "oguzhan", "seats": 2}`)
 		req := httptest.NewRequest(http.MethodPost, "/bookings", bytes.NewBuffer(body))
 		rr := httptest.NewRecorder()
 
 		handler.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("Beklenen durum kodu 500, alınan: %d", rr.Code)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("Etkinlik yokken 400 bekleniyordu, alınan: %d", rr.Code)
 		}
+
+		// Test bitince orijinal URL'i geri koyalım
+		os.Setenv("EVENT_SERVICE_URL", mockEventServer.URL)
 	})
 }
