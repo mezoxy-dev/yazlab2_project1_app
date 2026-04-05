@@ -1,4 +1,5 @@
-package handler
+package main
+// HTTP isteğini service'e iletir. Gelen JSON'u struct'a parse eder, validasyon yapar ve service'e iletir.
 
 import (
 	"auth-service/models"
@@ -23,7 +24,7 @@ func NewAuthHandler(svc service.AuthService) *AuthHandler {
 // "Şifre nasıl hashlenir?" bilmez, bilmemeli.
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "Metot desteklenmiyor", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -34,8 +35,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Username == "" || req.Password == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
+		w.WriteHeader(http.StatusBadRequest) // amacı HTTP 400 döndürmek, mesaj vermek değil
+		json.NewEncoder(w).Encode(map[string]string{ // JSON formatında hata mesajı döner, ancak HTTP 400 zaten hatayı belirtir
 			"error": "username ve password boş bırakılamaz",
 		})
 		return
@@ -54,7 +55,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 // Sorumluluğu: JSON parse → service.Login → token'ı HTTP yanıtına yaz.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "Metot desteklenmiyor", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -83,3 +84,4 @@ func SetupRouter(svc service.AuthService) *http.ServeMux {
 	mux.HandleFunc("/login", h.Login)
 	return mux
 }
+

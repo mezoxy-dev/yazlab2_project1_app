@@ -1,7 +1,6 @@
 package main
  
 import (
-	"auth-service/handler"
 	"auth-service/middleware"
 	"auth-service/repository"
 	"auth-service/service"
@@ -9,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
  
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -18,27 +18,41 @@ import (
 // Main bağımlılıkları birbirine bağlayacak
 func main() {
 	mongoURI := os.Getenv("MONGO_URI")
-	jwtSecret := os.Getenv("JWT_SECRET")
+	jwtSecret := os.Getenv("JWT_SECRET") // JWT Key üretmek için gerekli
 
 	if mongoURI == "" || jwtSecret == "" {
 		log.Fatal("MONGO_URI veya JWT_SECRET eksik")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// MongoDB Bağlantısı
-	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoURI))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
 		log.Fatal("MongoDB bağlantı hatası:", err)
 	}
 
 	// Katmanları birbirine bağlama
-	repo := repository.NewUserRepository(client.Database("authdb").Collection("users"))
+
+	// repo: authdb içerisinde users tablosunu işaret ediyoruz, 
+	// NewUserRepository fonksiyonu ile UserRepository oluşturuyoruz, 
+	// daha sonra uygulama "yeni kullanıcı kaydet (yazma)" ve "kullanıcı bul (okuma)" işlemleri geldiğinde 
+	// doğru tabloda işlemleri gerçekleştirir.
+	repo := repository.NewUserRepository(client.Database("authdb").Collection("users")) 
+	// Uygulama içi kuralları yönetir, veritabanı işlemleri yapabilmesi için repo verilir, 
+	// başarılı giriş yapan kullanıcıların jwt keyi de verilir diğer servislerin doğrulama yapabilmesi için
 	service := service.NewAuthService(repo, []byte(jwtSecret))
-	router := handler.SetupRouter(service)
+	// Web üzerinden gelen istekleri yönlendirir, /login ve /register adresine yaptığı HTTP isteklerini ilgili servislere bağlar
+	router := SetupRouter(service)
 
 	// Middleware ile sar ve HTTP sunucusunu başlat
 	// Middleware gelen isteklere JWT doğrulaması yapar, geçerli token yoksa 401 döner
 
 	log.Println("Auth Service 8081 portunda başlatılıyor")
+	// Web sunucudan gelen istekleri yönlendirmeden önce InternalOnly güvenliği uygular
+	// InternalOnly servisler arası güvenliği sağlamak için var, dışarıdan gelen istekleri engeller
+	// Internal Key dispatcher dan gelir
 	if err := http.ListenAndServe(":8081",middleware.InternalOnly(router)); err != nil {
 		log.Fatalf("Sunucu hatası: %v", err)
 	}

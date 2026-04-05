@@ -1,7 +1,6 @@
-package handler_test
+package main
 
 import (
-	"auth-service/handler"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -29,7 +28,7 @@ func (m *mockAuthService) Login(_, _ string) (string, error) {
 	return m.loginToken, m.loginErr
 }
 
-// ── Yardımcı ─────────────────────────────────────────────────────────────────
+// Yardımcı
 
 func makeRequest(router http.Handler, method, path string, body any) *httptest.ResponseRecorder {
 	b, _ := json.Marshal(body)
@@ -40,11 +39,11 @@ func makeRequest(router http.Handler, method, path string, body any) *httptest.R
 	return rr
 }
 
-// ── Register Handler Testleri ─────────────────────────────────────────────────
+// Register Handler Testleri
 
 func TestRegisterHandler_Basarili_201(t *testing.T) {
 	svc := &mockAuthService{}
-	router := handler.SetupRouter(svc)
+	router := SetupRouter(svc)
 
 	rr := makeRequest(router, "POST", "/register",
 		map[string]string{"username": "oguzhan", "password": "142213"})
@@ -56,7 +55,7 @@ func TestRegisterHandler_Basarili_201(t *testing.T) {
 
 func TestRegisterHandler_MukerrerKayit_400(t *testing.T) {
 	svc := &mockAuthService{registerErr: errors.New("bu kullanıcı adı zaten alınmış")}
-	router := handler.SetupRouter(svc)
+	router := SetupRouter(svc)
 
 	rr := makeRequest(router, "POST", "/register",
 		map[string]string{"username": "oguzhan", "password": "142213"})
@@ -68,7 +67,7 @@ func TestRegisterHandler_MukerrerKayit_400(t *testing.T) {
 
 func TestRegisterHandler_EksikAlan_400(t *testing.T) {
 	svc := &mockAuthService{}
-	router := handler.SetupRouter(svc)
+	router := SetupRouter(svc)
 
 	// password alanı eksik → handler validasyonda 400 döner, service hiç çağrılmaz
 	rr := makeRequest(router, "POST", "/register",
@@ -79,11 +78,11 @@ func TestRegisterHandler_EksikAlan_400(t *testing.T) {
 	}
 }
 
-// ── Login Handler Testleri ────────────────────────────────────────────────────
+// Login Handler Testleri
 
 func TestLoginHandler_Basarili_200(t *testing.T) {
 	svc := &mockAuthService{loginToken: "mock.jwt.token"}
-	router := handler.SetupRouter(svc)
+	router := SetupRouter(svc)
 
 	rr := makeRequest(router, "POST", "/login",
 		map[string]string{"username": "oguzhan", "password": "142213"})
@@ -101,7 +100,7 @@ func TestLoginHandler_Basarili_200(t *testing.T) {
 
 func TestLoginHandler_HataliSifre_401(t *testing.T) {
 	svc := &mockAuthService{loginErr: errors.New("hatalı şifre")}
-	router := handler.SetupRouter(svc)
+	router := SetupRouter(svc)
 
 	rr := makeRequest(router, "POST", "/login",
 		map[string]string{"username": "oguzhan", "password": "yanlis"})
