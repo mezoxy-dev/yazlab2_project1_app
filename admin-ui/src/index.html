@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EventHub | Canlı Sistem Demo</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-layout">
+
+        <!-- ========== SOL PANEL: KULLANICI PORTALI ========== -->
+        <div class="panel user-panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="panel-icon">🎟️</span>
+                    <div>
+                        <h2>EventHub Portalı</h2>
+                        <p>Gerçek kullanıcı deneyimi</p>
+                    </div>
+                </div>
+                <div id="user-badge" class="user-badge hidden"></div>
+            </div>
+
+            <!-- AUTH SECTION -->
+            <div id="auth-section" class="card">
+                <div class="tab-bar">
+                    <button id="tab-login" class="tab active" onclick="switchTab('login')">Giriş Yap</button>
+                    <button id="tab-register" class="tab" onclick="switchTab('register')">Kayıt Ol</button>
+                </div>
+
+                <div id="form-login" class="auth-form">
+                    <div class="input-group">
+                        <label>Kullanıcı Adı</label>
+                        <input type="text" id="login-username" placeholder="kullanici_adi">
+                    </div>
+                    <div class="input-group">
+                        <label>Şifre</label>
+                        <input type="password" id="login-password" placeholder="••••••••">
+                    </div>
+                    <div id="login-hint" class="hint-box">
+                        💡 Yanlış şifre girerek 401 hatasını gözlemleyebilirsiniz
+                    </div>
+                    <button class="btn btn-primary" onclick="window.doLogin()">Giriş Yap</button>
+                </div>
+
+                <div id="form-register" class="auth-form hidden">
+                    <div class="input-group">
+                        <label>Kullanıcı Adı</label>
+                        <input type="text" id="reg-username" placeholder="yeni_kullanici">
+                    </div>
+                    <div class="input-group">
+                        <label>Şifre</label>
+                        <input type="password" id="reg-password" placeholder="••••••••">
+                    </div>
+                    <div class="input-group">
+                        <label>Admin Kodu <span style="color:var(--text-muted);font-size:12px;">(boş bırakırsan normal üye)</span></label>
+                        <input type="text" id="reg-admin-secret" placeholder="admin_kayit_gizli_anahtari_2026">
+                    </div>
+                    <div id="reg-hint" class="hint-box">
+                        💡 Admin kodunu yanlış girerek 403 hatasını tetikleyebilirsiniz
+                    </div>
+                    <button class="btn btn-primary" onclick="window.doRegister()">Kayıt Ol</button>
+                </div>
+
+                <div id="auth-msg" class="msg-box"></div>
+            </div>
+
+            <!-- EVENTS SECTION (kim olursa olsun görebilir ama token gerekli) -->
+            <div id="events-section" class="card hidden">
+                <div class="section-header">
+                    <h3>🗓️ Etkinlikler</h3>
+                    <button class="btn btn-sm btn-outline" onclick="window.loadEvents()">↻ Yenile</button>
+                </div>
+                <div id="events-list" class="events-list">
+                    <div class="loading">Yükleniyor...</div>
+                </div>
+            </div>
+
+            <!-- ADMIN: ETKİNLİK OLUŞTUR -->
+            <div id="create-event-section" class="card hidden">
+                <h3>➕ Yeni Etkinlik Oluştur <span class="badge-admin">ADMIN</span></h3>
+                <div class="input-group">
+                    <label>Etkinlik Adı</label>
+                    <input type="text" id="event-name" placeholder="Rock Konseri 2026">
+                </div>
+                <div class="input-group">
+                    <label>Konum</label>
+                    <input type="text" id="event-location" placeholder="İstanbul Arena">
+                </div>
+                <div class="input-group">
+                    <label>Kapasite</label>
+                    <input type="number" id="event-capacity" placeholder="500" value="100">
+                </div>
+                <div id="create-hint" class="hint-box">
+                    💡 Kapasiteyi 0 ya da eksik bırakarak validasyon hatasını tetikleyin
+                </div>
+                <button class="btn btn-success" onclick="window.createEvent(event)">Etkinlik Oluştur</button>
+                <div id="create-event-msg" class="msg-box"></div>
+            </div>
+
+            <!-- BİLETLERİM -->
+            <div id="my-bookings-section" class="card hidden">
+                <div class="section-header">
+                    <h3>🎫 Biletlerim</h3>
+                    <button class="btn btn-sm btn-outline" onclick="window.loadMyBookings()">↻ Yenile</button>
+                </div>
+                <div id="bookings-list" class="events-list">
+                    <div class="empty-state">Henüz biletiniz yok</div>
+                </div>
+            </div>
+
+            <!-- ÇIKIŞ -->
+            <div id="logout-section" class="hidden" style="margin-top: auto; padding: 16px;">
+                <button class="btn btn-outline" style="width:100%" onclick="doLogout()">⟵ Çıkış Yap</button>
+            </div>
+        </div>
+
+        <!-- ========== ORTA AYRAÇ ========== -->
+        <div class="divider">
+            <div class="divider-line"></div>
+            <div class="divider-label">CANLI LOG</div>
+            <div class="divider-line"></div>
+        </div>
+
+        <!-- ========== SAĞ PANEL: ADMIN LOG İZLEYİCİ ========== -->
+        <div class="panel log-panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="panel-icon">📡</span>
+                    <div>
+                        <h2>Dispatcher Log Merkezi</h2>
+                        <p>Tüm HTTP trafiği gerçek zamanlı</p>
+                    </div>
+                </div>
+                <div id="log-status" class="status-indicator">
+                    <span class="pulse"></span>
+                    <span>Bekleniyor...</span>
+                </div>
+            </div>
+
+            <!-- LOG PANELİNE GİRİŞ (eğer admin değilse) -->
+            <div id="log-login-section" class="card">
+                <p style="color:var(--text-muted); margin-bottom:12px; font-size:14px;">Log akışını görmek için Admin hesabınızla buraya da giriş yapın:</p>
+                <div class="input-group">
+                    <label>Admin Kullanıcı Adı</label>
+                    <input type="text" id="log-admin-username" placeholder="admin_kullanici">
+                </div>
+                <div class="input-group">
+                    <label>Şifre</label>
+                    <input type="password" id="log-admin-password" placeholder="••••••••">
+                </div>
+                <button class="btn btn-primary" onclick="window.doAdminLogin()">Log Akışını Başlat</button>
+                <div id="log-login-msg" class="msg-box"></div>
+            </div>
+
+            <!-- LOG TABLOSU -->
+            <div id="log-table-wrapper" class="log-table-wrapper hidden">
+                <div class="log-stats-bar">
+                    <button id="btn-pause" class="btn btn-sm" onclick="window.togglePause(event)">⏸️ Duraklat</button>
+                    <span id="stat-total" class="badge">Toplam: 0</span>
+                    <span id="stat-critical" class="badge badge-error">🚨 Kritik: 0</span>
+                    <span id="stat-warning" class="badge badge-warning">⚠️ Uyarı: 0</span>
+                    <span id="stat-latency" class="badge">Ort: -</span>
+                </div>
+                <div class="table-scroll">
+                    <table id="log-table">
+                        <thead>
+                            <tr>
+                                <th>Zaman</th>
+                                <th>M</th>
+                                <th>Rota</th>
+                                <th>S</th>
+                                <th>Süre</th>
+                                <th>Mesaj</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

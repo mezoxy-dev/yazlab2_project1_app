@@ -6,7 +6,7 @@ import (
 )
 
 type LogService interface {
-	RecordAsync(method, path, ip string, status int, durationMs int64)
+	RecordAsync(method, path, ip string, status int, durationMs int64, message string)
 	GetRecent(limit int64) ([]models.TrafficLog, error)
 }
 

@@ -9,4 +9,5 @@ type TrafficLog struct {
 	Duration    int64      `bson:"duration_ms" json:"duration_ms"`
 	IP          string     `bson:"ip" json:"ip"`
 	Timestamp   time.Time  `bson:"timestamp" json:"timestamp"`
+	Message     string     `bson:"message,omitempty" json:"message,omitempty"`
 }

@@ -41,7 +41,7 @@ func TestRecordAsync_LogKaydedilmeli(t *testing.T) {
 	repo := &mockLogRepo{}
 	svc := service.NewLogService(repo)
 
-	svc.RecordAsync("GET", "/events", "127.0.0.1", 200, 45)
+	svc.RecordAsync("GET", "/events", "127.0.0.1", 200, 45, "")
 	waitForAsync(func() bool { return len(repo.inserted) > 0 })
 
 	if len(repo.inserted) == 0 {
@@ -64,7 +64,7 @@ func TestRecordAsync_FarkliStatusKodlari(t *testing.T) {
 	for _, c := range cases {
 		repo := &mockLogRepo{}
 		svc := service.NewLogService(repo)
-		svc.RecordAsync("GET", c.path, "::1", c.status, 10)
+		svc.RecordAsync("GET", c.path, "::1", c.status, 10, "")
 		waitForAsync(func() bool { return len(repo.inserted) > 0 })
 		if len(repo.inserted) == 0 {
 			t.Errorf("status=%d için log kaydedilmedi", c.status)
@@ -79,9 +79,9 @@ func TestRecordAsync_FarkliStatusKodlari(t *testing.T) {
 func TestGetRecent_KayitlariDondurur(t *testing.T) {
 	repo := &mockLogRepo{}
 	svc := service.NewLogService(repo)
-	svc.RecordAsync("GET", "/events", "::1", 200, 10)
-	svc.RecordAsync("POST", "/bookings", "::1", 201, 20)
-	svc.RecordAsync("DELETE", "/events/1", "::1", 204, 5)
+	svc.RecordAsync("GET", "/events", "::1", 200, 10, "")
+	svc.RecordAsync("POST", "/bookings", "::1", 201, 20, "created")
+	svc.RecordAsync("DELETE", "/events/1", "::1", 204, 5, "")
 	waitForAsync(func() bool { return len(repo.inserted) >= 3 })
 
 	logs, err := svc.GetRecent(100)
@@ -93,7 +93,7 @@ func TestGetRecent_LimitUygulanir(t *testing.T) {
 	repo := &mockLogRepo{}
 	svc := service.NewLogService(repo)
 	for i := 0; i < 10; i++ {
-		svc.RecordAsync("GET", "/events", "::1", 200, 5)
+		svc.RecordAsync("GET", "/events", "::1", 200, 5, "")
 	}
 	waitForAsync(func() bool { return len(repo.inserted) >= 10 })
 

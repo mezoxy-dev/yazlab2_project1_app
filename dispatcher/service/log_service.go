@@ -16,7 +16,7 @@ func NewLogService(repo repository.LogStore) LogService {
 }
 
 // RecordAsync: Logu goroutine ile asenkron kaydeder.
-func (s *logService) RecordAsync(method, path, ip string, status int, durationMs int64) {
+func (s *logService) RecordAsync(method, path, ip string, status int, durationMs int64, message string) {
 	entry := models.TrafficLog{
 		Method:    method,
 		Path:      path,
@@ -24,6 +24,7 @@ func (s *logService) RecordAsync(method, path, ip string, status int, durationMs
 		Duration:  durationMs,
 		IP:        ip,
 		Timestamp: time.Now(),
+		Message:   message,
 	}
 	go func(l models.TrafficLog) {
 		if err := s.repo.Insert(l); err != nil {

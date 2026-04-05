@@ -6,7 +6,7 @@ services:
     ports:
       - "8080:8080" 
     environment:
-      - MONGO_URI=mongodb://db-auth:27017
+      - MONGO_URI=mongodb://db-dispatcher:27017
       - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
       - INTERNAL_GATEWAY_KEY=oguzhan_ic_guvenlik_anahtari
     depends_on:
@@ -82,6 +82,16 @@ services:
     environment:
       - K6_OUT=influxdb=http://influxdb:8086/k6
       - API_URL=http://dispatcher:8080
+
+  admin-ui:
+    build: ./admin-ui
+    container_name: admin-ui
+    ports:
+      - "4000:80"
+    depends_on:
+      - dispatcher
+    networks:
+      - ticket-net
 
   db-dispatcher:
     image: mongo:latest

@@ -40,7 +40,17 @@ func (c *httpEventClient) CheckCapacity(eventID string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("etkinlik bulunamadı veya yer yok")
+		return errors.New("etkinlik bulunamadı")
+	}
+
+	var event struct {
+		Available int `json:"available"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&event); err != nil {
+		return errors.New("etkinlik verisi okunamadı")
+	}
+	if event.Available <= 0 {
+		return errors.New("kontenjan dolmuştur, bilet alınamaz")
 	}
 	return nil
 }
