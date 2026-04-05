@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
  
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -19,9 +20,14 @@ func main() {
 	mongoURI := os.Getenv("MONGO_URI")
 
 	client := connectMongo(mongoURI)
-	collection := client.Database("dispatcher_logs").Collection("traffic")
+	trafficColl := client.Database("dispatcher_logs").Collection("traffic")
 
-	logRepo  := repository.NewMongoLogRepository(collection)
+	// Logları tarihe göre tersten çekiyoruz (Admin UI), bu yüzden index şart
+	_, _ = trafficColl.Indexes().CreateOne(context.Background(), mongo.IndexModel{
+		Keys: bson.D{{Key: "timestamp", Value: -1}},
+	})
+
+	logRepo  := repository.NewMongoLogRepository(trafficColl)
 	logSvc   := service.NewLogService(logRepo)
 	authSvc  := service.NewAuthService()
 	proxySvc := service.NewProxyService(authSvc)

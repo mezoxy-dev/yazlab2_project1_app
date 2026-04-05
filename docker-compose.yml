@@ -4,7 +4,7 @@ services:
   dispatcher:
     build: ./dispatcher
     ports:
-      - "8080:8080" 
+      - "8080:8080"
     environment:
       - MONGO_URI=mongodb://db-dispatcher:27017
       - JWT_SECRET=oguzhan_erbil_ozel_anahtar_2026
@@ -70,6 +70,8 @@ services:
       - influxdb
     networks:
       - ticket-net
+    volumes:
+      - grafana_data:/var/lib/grafana
 
   k6:
     image: grafana/k6:latest
@@ -130,3 +132,4 @@ volumes:
   auth_data:
   event_data:
   booking_data:
+  grafana_data:

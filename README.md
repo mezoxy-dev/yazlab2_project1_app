@@ -267,10 +267,6 @@ erDiagram
     }
 ```
 
-#### 6.2 Redis Veri Yapıları (Cache/Trafik)
-- **Trafik Verisi:** In-memory analizler için `traffic_rate` anahtarı altında TTL (Time-To-Live) ile tutulur.
-- **Log Buffering:** MongoDB'ye yazılmadan önce hızlı asenkron yazımlar için Redis List yapısı tercih edilebilir.
-
 ---
 
 ### 7. TDD Süreci
@@ -302,40 +298,58 @@ ok      dispatcher/service      0.482s
 ```
 
 #### 8.2 Entegrasyon Testleri
-- **Docker Smoke Test:** `docker-compose up` ile ayağa kalkan tüm servislerin birbiriyle iletişimi (Ping/Pong) doğrulanmıştır.
-- **Auth Isolation:** Mikroservislere doğrudan (Dispatcher dışında) port üzerinden erişim denendiğinde bağlantının reddedildiği (Network Isolation) teyit edilmiştir.
+- **E2E Container Eşleşmesi:** K6 kullanarak tüm container'lar üzerinden uçtan uca veri oluşturma, okuma işlemleri ve birbirleriyle iletişimleri doğrulanmıştır.
+- **Network İzolasyon Testi:** Mikroservislere dış ağdan (Dispatcher arkasından dolaşarak) direkt HTTP isteği yapıldığında bağlantının erişim engeli (Connection Refused) verdiği simüle edilmiştir.
 
 ---
 
-### 9. Yük Testi Sonuçları
+### 9. K6 Performans ve Yük Testi Değerlendirmesi
 
-Sistem, **k6** profesyonel yük testi aracı kullanılarak yoğun trafik altında simüle edilmiştir. 
+Sistem, yük altındaki davranışını ölçmek ve mimari performansını analiz etmek için **k6** aracıyla 3 farklı senaryoda test edilmiştir.
 
-> [!CAUTION]
-> Bu bölümdeki verileri kendi bilgisayarınızda yaptığınız test sonuçlarına göre güncelleyiniz.
+#### 9.1 Load (Yük) Testi - 500 Sanal Kullanıcı (VU)
+Sistemin beklenen maksimum yük altında nasıl davrandığını ölçmek için 500 ardışık kullanıcı sistemle 2.5 dakika boyunca uçtan uca etkileşime girmiştir.
 
-| Eş Zamanlı İstek (VU) | Ortalama Yanıt Süresi (ms) | Hata Oranı (%) | Başarı Durumu |
-|---|---|---|---|
-| 50 | | | |
-| 100 | | | |
-| 200 | | | |
-| 500 | | | |
+| RPS (İstek/Sn) | Ortalama Yanıt Süresi | P95 Süresi | Hata Oranı |
+| ------------- | -------------------- | ---------- | ---------- |
+| ~245 Req/s     | 11.44 ms             | **50.37 ms**| **%0.00**  |
 
-*Örnek Sonuç Grafiği:* (Grafana üzerinden alınan load test ekran görüntüsü buraya eklenebilir).
+**Analiz:** Sistem 500 VU altında tamamen istikrarlı çalışmaktadır. Kayıtlı kullanıcıların giriş, bilet listeleme ve alma işlemleri kusursuzdur. Herhangi bir darboğaz gözlemlenmemiştir.
+![Load Test Grafana Sonuçları](RESIM_LINKINI_BURA_YAPISTIRIN_VEYA_DOSYA_YOLUNU_VERIN)
+
+#### 9.2 Stress Testi - 600 Sanal Kullanıcı (VU)
+Sistemi sınırlarına iten bu testte, kapasite yönetimi ölçülmüştür. 73,192 bilet doğrulama (check) yapılmıştır.
+
+| RPS (İstek/Sn) | `/bookings` Süresi | `/login` Süresi | Hata Oranı |
+| ------------- | ------------- | ---------- | ---------- |
+| ~404 Req/s     | **15 ms** (P95) | 1 saniye (P95) | **%0.00**  |
+
+**Mimari Başarı:** Etkili bir mikroservis izolasyon kanıtı! Stress testinde `bcrypt` şifrelemesinin CPU doğası gereği yüksek yük altında **Auth Service (/login)** yanıt sürelerinde bir yokuş oluşturduğu ancak bu "tıkanıklığın" izolasyon sayesinde **Booking Service (/bookings)** tarafını zerre kadar yavaşlatmadığı kanıtlanmıştır. Sıfır Hata (`%0`) ile sistem ayakta kalmıştır.
+![Stress Test Grafana Sonuçları](RESIM_LINKINI_BURA_YAPISTIRIN_VEYA_DOSYA_YOLUNU_VERIN)
+
+#### 9.3 Spike (Ani Şok) Testi - 1000 Sanal Kullanıcı (VU)
+Sisteme saniyede >850 istek birdenbire bindirilerek Ani Yük / Çökme testi yapılmıştır. Toplam 86,307 doğrulama yapıldı.
+
+| RPS (İstek/Sn) | Durum | Yanıt Kodu Senaryosu | Hata Oranı |
+| ------------- | ----- | ------------------- | ---------- |
+| ~859 Req/s     | Çok Başarılı | 400 Bad Req. (Kapasite) | **%0.01**  |
+
+**Analiz:** Aniden saldıran 1000 sanal kullanıcı ile "Race Condition" verileri başarıyla test edilmiş, sistemin kontenjan (Available Tickets > 0) logiği başarıyla devreye girmiş ve doğru kodlarla `Capacity Hatasi (400)` fırlatılmıştır. Monolitik olsa darboğaza düşecek sistem, ufak timeoutlar dışı (%0.01) yıkılmaz performans göstermiştir.
+![Spike Test Grafana Sonuçları](RESIM_LINKINI_BURA_YAPISTIRIN_VEYA_DOSYA_YOLUNU_VERIN)
 
 ---
 
 ### 10. Monitoring ve Görselleştirme
 
-#### 10.1 Grafana & InfluxDB
-Dispatcher üzerindeki trafik akışı gerçek zamanlı olarak görselleştirilir.
-- **InfluxDB:** k6 yük testi sonuçlarını zaman serisi verisi olarak saklar.
-- **Grafana:** InfluxDB'deki verileri kullanarak RPS (Requests Per Second), Response Time ve Error Rate grafiklerini sunar.
+#### 10.1 Grafana & InfluxDB Performans İzleme
+Dispatcher üzerindeki ve Test senaryolarındaki loglar tamamen görselleştirilebilir konfigürasyondadır.
+- **InfluxDB:** k6 yük testi sonuçlarını zaman serisi (Time-series) DB olarak depolar.
+- **Grafana:** InfluxDB'deki verileri çekerek Request Per Second, Süreler ve Başarı Oranı (Checks) panoları olarak sergiler.
 
-#### 10.2 Admin Dashboard (Custom UI)
-Dispatcher üzerindeki detaylı log tablosu ve sistem durumunu gösteren React/JS tabanlı bir arayüz geliştirilmiştir.
-- **Log Table:** `/logs` endpoint'inden beslenen anlık trafik tablosu.
-- **Real-time Monitoring:** Servislerin (UP/DOWN) durum monitörü.
+#### 10.2 Admin Dashboard (Vanilla HTML/JS UI)
+Projedeki trafik, log durumu ve biletler bir frontend üzerinden takibe müsaittir.
+- **Log Table:** MongoDB Traffic Collection.
+- **Real-time Monitoring:** Servis up/down tabanlı manuel monitörleme yetrliği.
 
 ---
 

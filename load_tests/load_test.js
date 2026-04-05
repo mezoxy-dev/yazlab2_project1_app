@@ -75,10 +75,28 @@ export function setup() {
 export default function (data) {
     if (!data.eventId) return;
 
+    // Her VU (Virtual User) kendi kullanıcısını kullansın.
+    // Bu sayede tek bir kullanıcının bilet listesi şişmez ve test daha gerçekçi olur.
+    const vuUser = `vu_${__VU}_${data.testUser}`;
+    const vuPass = data.testPass;
+
+    // ADIM 0: Kayıt (Sadece sanal kullanıcının ilk iterasyonunda çalışır)
+    // Böylece test boyunca gereksiz 400 Bad Request (Kullanıcı zaten var) hatalarından kurtuluruz.
+    if (__ITER === 0) {
+        let regRes = http.post(`${BASE_URL}/register`, JSON.stringify({
+            username: vuUser,
+            password: vuPass
+        }), { headers: { 'Content-Type': 'application/json' }, tags: { name: 'Register' } });
+        
+        check(regRes, {
+            '[Register] Başarılı (201/200)': (r) => r.status === 201 || r.status === 200,
+        });
+    }
+
     // ADIM 1: Login Olma
     const loginRes = http.post(`${BASE_URL}/login`, JSON.stringify({
-        username: data.testUser,
-        password: data.testPass
+        username: vuUser,
+        password: vuPass
     }), { headers: { 'Content-Type': 'application/json' } });
 
     check(loginRes, {
@@ -105,7 +123,7 @@ export default function (data) {
 
     sleep(0.5);
 
-    // ADIM 3: İlgili Etkinliğin Detayına Bak (GET /events/{id})
+    // ADIM 3: İlgili Etkinliğin Detayına Bak (GET /events/${id})
     let getEventDetailRes = http.get(`${BASE_URL}/events/${data.eventId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -119,7 +137,7 @@ export default function (data) {
     // ADIM 4: Bilet Rezervasyonu Yap (POST /bookings)
     const bookingPayload = JSON.stringify({
         event_id: data.eventId,
-        user_id: data.testUser,
+        user_id: vuUser, // Bu VU'nun kendi kullanıcı adı
         seats: 1
     });
 
@@ -137,7 +155,7 @@ export default function (data) {
     sleep(0.5);
 
     // ADIM 5: Kendi biletlerimi kontrol et (GET /bookings?user_id=...)
-    let getBookingsRes = http.get(`${BASE_URL}/bookings?user_id=${data.testUser}`, {
+    let getBookingsRes = http.get(`${BASE_URL}/bookings?user_id=${vuUser}`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
 

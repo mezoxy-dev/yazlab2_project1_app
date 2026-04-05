@@ -13,7 +13,7 @@ docker exec yazlab2_project1_app-db-event-1 mongosh eventdb --eval "db.events.de
 
 # 3. Reservation DB Temizle (Biletler)
 Write-Host "🧹 Reservation veritabanı temizleniyor..." -ForegroundColor Yellow
-docker exec yazlab2_project1_app-db-booking-1 mongosh reservationdb --eval "db.bookings.deleteMany({});" | Out-Null
+docker exec yazlab2_project1_app-db-booking-1 mongosh booking_db --eval "db.bookings.deleteMany({});" | Out-Null
 
 # 4. Dispatcher Log DB Temizle (Admin UI Logları)
 Write-Host "🧹 Dispatcher Log veritabanı temizleniyor..." -ForegroundColor Yellow

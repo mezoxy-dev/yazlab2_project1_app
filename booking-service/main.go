@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -26,7 +27,14 @@ func main() {
 		log.Fatalf("MongoDB bağlantı hatası: %v", err)
 	}
 
-	repo        := repository.NewMongoBookingRepository(client.Database("booking_db"))
+	bookingDB   := client.Database("booking_db")
+	repo        := repository.NewMongoBookingRepository(bookingDB)
+	
+	// Index oluşturma: GetBookingsByUser için user_id indeksi şart
+	_, _ = bookingDB.Collection("bookings").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "user_id", Value: 1}},
+	})
+
 	eventClient := service.NewEventClient()          
 	svc         := service.NewBookingService(repo, eventClient)
 	router      := handler.SetupRouter(svc)

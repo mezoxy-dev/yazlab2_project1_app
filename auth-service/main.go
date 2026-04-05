@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
  
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -39,7 +40,15 @@ func main() {
 	// NewUserRepository fonksiyonu ile UserRepository oluşturuyoruz, 
 	// daha sonra uygulama "yeni kullanıcı kaydet (yazma)" ve "kullanıcı bul (okuma)" işlemleri geldiğinde 
 	// doğru tabloda işlemleri gerçekleştirir.
-	repo := repository.NewUserRepository(client.Database("authdb").Collection("users")) 
+	userColl := client.Database("authdb").Collection("users")
+	
+	// Username için benzersiz index oluşturma (Hem performans hem de mükerrer kayıt engelleme)
+	_, _ = userColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "username", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+
+	repo := repository.NewUserRepository(userColl) 
 	// Uygulama içi kuralları yönetir, veritabanı işlemleri yapabilmesi için repo verilir, 
 	// başarılı giriş yapan kullanıcıların jwt keyi de verilir diğer servislerin doğrulama yapabilmesi için
 	service := service.NewAuthService(repo, []byte(jwtSecret))
