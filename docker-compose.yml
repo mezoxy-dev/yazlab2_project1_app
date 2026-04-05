@@ -49,15 +49,6 @@ services:
       - db-booking
     networks:
       - ticket-net
-    
-  ui-dashboard:
-    build: ./ui-dashboard
-    ports:
-      - "3000:80"
-    depends_on:
-      - dispatcher
-    networks:
-      - ticket-net
 
   db-dispatcher:
     image: mongo:latest
