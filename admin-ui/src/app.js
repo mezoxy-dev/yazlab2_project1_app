@@ -1,10 +1,10 @@
 /* ============================================================
-   EventHub — Robust & Professional UI Logic
+   Etkinlik Merkezi — Kurumsal UI Mantığı
    Author: Antigravity Engineer
-   Description: Fault-tolerant JS architecture with clear separation
+   Description: Event Listeners tabanlı, çakışmasız oturum yönetimi.
    ============================================================ */
 
-// ---------- GLOBAL STATE ----------
+// ---------- GLOBAL DURUM ----------
 window.userToken   = null;
 window.userRole    = null;
 window.username    = null;
@@ -14,54 +14,43 @@ window.knownIds    = new Set();
 window.isPaused    = false;
 window.filterMode  = 'all';
 
-// Stats state
 let stats = { total: 0, warnings: 0, critical: 0, latencies: [] };
 
-// ---------- API HELPER ----------
+// ---------- API YARDIMCI ----------
 async function apiCall(path, opts = {}) {
-    const baseUrl = '/api';
+    const baseUrl = '/api'; 
     try {
         const response = await fetch(baseUrl + path, opts);
         return response;
     } catch (err) {
         console.error(`API Error (${path}):`, err);
-        throw new Error('Sunucuya erişilemiyor. Lütfen bağlantınızı kontrol edin.');
+        throw new Error('Sunucuyla bağlantı kurulamadı.');
     }
 }
 
-// ---------- NOTIFICATIONS ----------
+// ---------- BİLDİRİMLER ----------
 function showFeedback(id, msg, type = 'error') {
     const el = document.getElementById(id);
-    if (!el) {
-        // Fallback to toast if specific ID not found
-        showToast(msg, type);
-        return;
-    }
+    if (!el) return showToast(msg, type);
     el.textContent = msg;
     el.className = 'msg-box ' + type;
-    setTimeout(() => {
-        el.className = 'msg-box';
-        el.textContent = '';
-    }, 5000);
+    setTimeout(() => { if(el) { el.className = 'msg-box'; el.textContent = ''; } }, 5000);
 }
 
 function showToast(msg, type = 'success') {
     const t = document.createElement('div');
     t.textContent = msg;
     const bgColor = type === 'success' ? 'rgba(16,185,129,0.95)' : 'rgba(239,68,68,0.95)';
-    t.style = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:${bgColor};color:white;padding:14px 28px;border-radius:12px;z-index:9999;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,0.4);backdrop-filter:blur(8px);transition:all 0.3s ease;font-family:Inter,sans-serif;`;
+    t.style = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:${bgColor};color:white;padding:14px 28px;border-radius:12px;z-index:9999;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,0.4);backdrop-filter:blur(8px);transition:all 0.4s ease;font-family:Outfit,sans-serif;`;
     document.body.appendChild(t);
-    setTimeout(() => {
-        t.style.opacity = '0';
-        setTimeout(() => t.remove(), 400);
-    }, 4000);
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 4000);
 }
 
-// ---------- AUTH LOGIC ----------
-window.doLogin = async function() {
+// ---------- GİRİŞ/KAYIT MANTIĞI ----------
+async function handleUserLogin() {
     const u = document.getElementById('login-username').value.trim();
     const p = document.getElementById('login-password').value;
-    if (!u || !p) return showFeedback('auth-msg', 'Kullanıcı adı ve şifre gerekli');
+    if (!u || !p) return showFeedback('auth-msg', 'Eksik bilgi.');
 
     try {
         const res = await apiCall('/login', {
@@ -69,12 +58,8 @@ window.doLogin = async function() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({username: u, password: p})
         });
-
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            showFeedback('auth-msg', `❌ ${data.error || 'Giriş başarısız'} (${res.status})`);
-            return;
-        }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Giriş reddedildi.');
 
         window.userToken = data.token;
         const payload = decodeJwt(data.token);
@@ -82,17 +67,15 @@ window.doLogin = async function() {
         window.username = u;
         
         finalizeAuth();
-    } catch(e) {
-        showFeedback('auth-msg', '❌ Hata: ' + e.message);
-    }
-};
+        showToast('Portal girişi başarılı.', 'success');
+    } catch(e) { showFeedback('auth-msg', '❌ ' + e.message); }
+}
 
-window.doRegister = async function() {
+async function handleUserRegister() {
     const u = document.getElementById('reg-username').value.trim();
     const p = document.getElementById('reg-password').value;
     const s = document.getElementById('reg-admin-secret').value.trim();
-    if (!u || !p) return showFeedback('auth-msg', 'Eksik bilgi girişi');
-
+    if (!u || !p) return showFeedback('auth-msg', 'Eksik bilgi.');
     const body = s ? {username: u, password: p, admin_secret: s} : {username: u, password: p};
 
     try {
@@ -101,222 +84,162 @@ window.doRegister = async function() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body)
         });
-
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            showFeedback('auth-msg', `❌ ${data.error || 'Kayıt başarısız'}`);
-            return;
-        }
-
-        showFeedback('auth-msg', '✅ Başarı: Giriş yapabilirsiniz.', 'success');
-        window.switchTab('login');
-    } catch(e) {
-        showFeedback('auth-msg', '❌ Hata: ' + e.message);
-    }
-};
-
-function finalizeAuth() {
-    document.getElementById('auth-section').classList.add('hidden');
-    document.getElementById('events-section').classList.remove('hidden');
-    document.getElementById('my-bookings-section').classList.remove('hidden');
-    document.getElementById('logout-section').classList.remove('hidden');
-
-    const badge = document.getElementById('user-badge');
-    badge.classList.remove('hidden');
-    badge.innerHTML = `👤 ${window.username}${window.userRole === 'admin' ? ' <span class="badge-admin">ADMIN</span>' : ''}`;
-
-    if (window.userRole === 'admin') {
-        document.getElementById('create-event-section').classList.remove('hidden');
-    }
-
-    window.loadEvents();
-    window.loadMyBookings();
+        if (!res.ok) throw new Error((await res.json()).error || 'Kayıt hatası.');
+        showFeedback('auth-msg', '✅ Kayıt başarılı.', 'success');
+        handleTabSwitch('login');
+    } catch(e) { showFeedback('auth-msg', '❌ ' + e.message); }
 }
 
-window.doLogout = function() {
-    location.reload(); 
-};
+function finalizeAuth() {
+    safeToggle('auth-section', true);
+    safeToggle('events-section', false);
+    safeToggle('my-bookings-section', false);
+    safeToggle('logout-section', false);
 
-// ---------- EVENT MANAGEMENT ----------
-window.loadEvents = async function() {
+    const badge = document.getElementById('user-badge');
+    if (badge) {
+        badge.classList.remove('hidden');
+        badge.innerHTML = `👤 ${window.username}${window.userRole === 'admin' ? ' <span class="badge-admin">ADMIN</span>' : ''}`;
+    }
+    if (window.userRole === 'admin') safeToggle('create-event-section', false);
+
+    handleLoadEvents();
+    handleLoadBookings();
+}
+
+function handlePortalLogout() {
+    console.log("Portal Logout Executing...");
+    window.userToken = null;
+    window.userRole = null;
+    window.username = null;
+    
+    safeToggle('auth-section', false);
+    safeToggle('events-section', true);
+    safeToggle('my-bookings-section', true);
+    safeToggle('logout-section', true);
+    safeToggle('create-event-section', true);
+    safeToggle('user-badge', true);
+    
+    showToast('Portal oturumu kapatıldı.', 'success');
+}
+
+// ---------- ETKİNLİK YÖNETİMİ ----------
+async function handleLoadEvents() {
     const list = document.getElementById('events-list');
-    list.innerHTML = '<div class="loading">Sistem taranıyor...</div>';
-
+    if (!list) return;
+    list.innerHTML = '<div class="loading">Yükleniyor...</div>';
     try {
         const headers = window.userToken ? {'Authorization': `Bearer ${window.userToken}`} : {};
         const res = await apiCall('/events', { headers });
-
-        if (!res.ok) {
-            list.innerHTML = '<div class="empty-state">Sistem meşgul, daha sonra tekrar deneyin.</div>';
-            return;
-        }
-
         const events = await res.json().catch(() => []);
-        if (events.length === 0) {
-            list.innerHTML = '<div class="empty-state">Henüz aktif bir etkinlik bulunmuyor.</div>';
-            return;
-        }
-
-        list.innerHTML = '';
+        list.innerHTML = events.length === 0 ? '<div class="empty-state">Etkinlik yok.</div>' : '';
         events.forEach(ev => {
             const card = document.createElement('div');
             card.className = 'event-card';
             const avail = ev.available ?? ev.capacity ?? 0;
             const isSoldOut = avail <= 0;
-            
             card.innerHTML = `
                 <div class="event-info">
                     <div class="event-name">${escapeHTML(ev.name)}</div>
                     <div class="event-meta">📍 ${escapeHTML(ev.location)}</div>
                 </div>
-                <div class="event-meta-right">
-                    <span class="event-capacity" style="color:${isSoldOut ? 'var(--error)' : 'var(--success)'}">🎫 ${avail} / ${ev.capacity}</span>
-                    <button class="btn-book" ${isSoldOut ? 'disabled' : ''} onclick="window.bookEvent('${ev.id || ev._id}', '${escapeHTML(ev.name)}')">
+                <div style="text-align: right">
+                    <div class="event-capacity" style="color:${isSoldOut ? 'var(--error)' : 'var(--success)'}">${avail} / ${ev.capacity}</div>
+                    <button class="btn-book" data-id="${ev.id || ev._id}" data-name="${escapeHTML(ev.name)}" ${isSoldOut ? 'disabled' : ''}>
                         ${isSoldOut ? 'Tükendi' : 'Bilet Al'}
                     </button>
                 </div>
             `;
             list.appendChild(card);
         });
-    } catch(e) {
-        list.innerHTML = `<div class="empty-state" style="color:var(--error)">⚠️ Hata: ${e.message}</div>`;
-    }
-};
+    } catch(e) { list.innerHTML = '<div class="empty-state">Hata.</div>'; }
+}
 
-window.createEvent = async function(evt) {
-    // Prevent default and stop propagation
-    if (evt) {
-        if (evt.preventDefault) evt.preventDefault();
-        evt.stopPropagation();
-    }
-
-    const btn = evt ? (evt.currentTarget || evt.target) : document.querySelector('.btn-success');
-    if (!btn) return console.error('Create button not found in DOM');
-
-    const originalText = btn.textContent;
-
+async function handleCreateEventSubmission() {
     try {
-        const nameVal     = document.getElementById('event-name').value.trim();
-        const locationVal = document.getElementById('event-location').value.trim();
-        const capacityVal = parseInt(document.getElementById('event-capacity').value);
-
-        if (!nameVal) return showFeedback('create-event-msg', '❌ Hata: Etkinlik adı boş olamaz.');
-        
-        btn.disabled = true;
-        btn.textContent = '⏱️ İşleniyor...';
+        const nameVal = document.getElementById('event-name').value.trim();
+        const locVal = document.getElementById('event-location').value.trim();
+        const capVal = parseInt(document.getElementById('event-capacity').value);
+        if (!nameVal) throw new Error('Etkinlik adı gerekli.');
 
         const res = await apiCall('/events', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${window.userToken}`
-            },
-            body: JSON.stringify({
-                name: nameVal, 
-                location: locationVal || 'TBD', 
-                capacity: isNaN(capacityVal) ? 100 : capacityVal
-            })
+            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${window.userToken}`},
+            body: JSON.stringify({name: nameVal, location: locVal || 'Online', capacity: isNaN(capVal) ? 100 : capVal})
         });
-
-        if (!res.ok) {
-            const errorTxt = await res.text().catch(() => 'Sunucu hatası');
-            throw new Error(errorTxt);
-        }
-
-        showFeedback('create-event-msg', '✅ Başarı: Etkinlik başarıyla yayına alındı.', 'success');
-        
-        // Reset form
+        if (!res.ok) throw new Error('Kayıt başarısız.');
+        showFeedback('create-event-msg', '✅ Etkinlik yayında.', 'success');
         document.getElementById('event-name').value = '';
         document.getElementById('event-location').value = '';
-        document.getElementById('event-capacity').value = '100';
-        
-        // Refresh list
-        await window.loadEvents();
-    } catch (err) {
-        showFeedback('create-event-msg', '❌ Hata: ' + err.message);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
-};
+        await handleLoadEvents();
+    } catch (err) { showFeedback('create-event-msg', '❌ ' + err.message); }
+}
 
-window.bookEvent = async function(eventId, eventName) {
-    if (!window.userToken) return showToast('Önce giriş yapmalısınız.', 'error');
-
+async function handleBookingSubmission(eventId, eventName) {
+    if (!window.userToken) return showToast('Bilet almak için giriş yapın.', 'error');
     try {
         const res = await apiCall('/bookings', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${window.userToken}`
-            },
+            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${window.userToken}`},
             body: JSON.stringify({event_id: eventId, user_id: window.username, seats: 1})
         });
+        if (!res.ok) throw new Error('Kontenjan dolu veya yetki hatası.');
+        showToast(`✅ "${eventName}" bileti alındı.`, 'success');
+        handleLoadEvents(); handleLoadBookings();
+    } catch(e) { showToast('Hata: ' + e.message, 'error'); }
+}
 
-        if (!res.ok) {
-            const data = await res.json().catch(() => ({error: 'İşlem reddedildi'}));
-            showToast(`❌ Hata: ${data.error}`, 'error');
-            return;
-        }
-
-        showToast(`✅ "${eventName}" için biletiniz alındı!`, 'success');
-        window.loadEvents();
-        window.loadMyBookings();
-    } catch(e) {
-        showToast('Bağlantı hatası: ' + e.message, 'error');
-    }
-};
-
-window.loadMyBookings = async function() {
+async function handleLoadBookings() {
     if (!window.userToken) return;
     const list = document.getElementById('bookings-list');
-
+    if (!list) return;
     try {
         const res = await apiCall(`/bookings?user_id=${encodeURIComponent(window.username)}`, {
             headers: {'Authorization': `Bearer ${window.userToken}`}
         });
-
         const bookings = await res.json().catch(() => []);
-        list.innerHTML = bookings.length === 0 ? '<div class="empty-state">Henüz biletiniz yok.</div>' : '';
-        
+        list.innerHTML = bookings.length === 0 ? '<div class="empty-state">Biletiniz yok.</div>' : '';
         bookings.forEach(b => {
             const card = document.createElement('div');
             card.className = 'booking-card';
+            card.style = "margin-bottom:8px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; font-size:13px;";
             card.innerHTML = `🎫 <strong>${escapeHTML(b.event_id)}</strong> — 1 Koltuk`;
             list.appendChild(card);
         });
-    } catch(e) {
-        list.innerHTML = '<div class="empty-state" style="color:var(--error)">Veriler yüklenemedi.</div>';
-    }
-};
+    } catch(e) { list.innerHTML = '<div class="empty-state">Hata.</div>'; }
+}
 
 // ---------- ADMIN LOG CENTER ----------
-window.doAdminLogin = async function() {
+async function handleAdminLogin() {
     const u = document.getElementById('log-admin-username').value.trim();
     const p = document.getElementById('log-admin-password').value;
-    
     try {
         const res = await apiCall('/login', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({username: u, password: p})
         });
-
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Giriş reddedildi');
-
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Giriş başarısız.');
         const payload = decodeJwt(data.token);
-        if (payload.role !== 'admin') throw new Error('Yetersiz yetki.');
-
+        if (payload.role !== 'admin') throw new Error('Admin yetkisi gerekli.');
         window.adminToken = data.token;
-        document.getElementById('log-login-section').classList.add('hidden');
-        document.getElementById('log-table-wrapper').classList.remove('hidden');
-        
+        safeToggle('log-login-section', true);
+        safeToggle('log-table-wrapper', false);
         startLogStream();
-    } catch(e) {
-        showFeedback('log-login-msg', '❌ ' + e.message);
-    }
-};
+        showToast('Hattat stream başlatıldı.', 'success');
+    } catch(e) { showFeedback('log-login-msg', '❌ ' + e.message); }
+}
+
+function handleAdminLogout() {
+    console.log("Admin Logout Executing...");
+    window.adminToken = null;
+    if (window.logInterval) clearInterval(window.logInterval);
+    window.logInterval = null;
+    safeToggle('log-login-section', false);
+    safeToggle('log-table-wrapper', true);
+    showToast('Log merkezi kapatıldı.', 'success');
+}
 
 function startLogStream() {
     if (window.logInterval) clearInterval(window.logInterval);
@@ -327,142 +250,154 @@ function startLogStream() {
 
 async function fetchLogs() {
     if (window.isPaused || !window.adminToken) return;
-    
     try {
         const res = await apiCall('/admin/stats', {
             headers: {'Authorization': `Bearer ${window.adminToken}`}
         });
-        if (res.status === 401 || res.status === 403) {
-            clearInterval(window.logInterval);
-            location.reload();
-            return;
-        }
+        if (res.status === 401 || res.status === 403) { handleAdminLogout(); return; }
         const logs = await res.json().catch(() => []);
         processLogs(logs);
-    } catch (e) { console.warn('Stream error:', e); }
+    } catch (e) { }
 }
 
 function processLogs(logs) {
     const tbody = document.getElementById('log-body');
     if (!tbody) return;
-
     const newLogs = logs.filter(l => !window.knownIds.has(l.id || l._id)).reverse();
-    
     newLogs.forEach(log => {
         window.knownIds.add(log.id || log._id);
         stats.total++;
         if (log.status >= 500) stats.critical++;
         else if (log.status >= 400) stats.warnings++;
         if (log.duration_ms) stats.latencies.push(log.duration_ms);
-
         const tr = document.createElement('tr');
         tr.className = 'new-row';
         const d = new Date(log.timestamp);
         const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-        
         tr.innerHTML = `
             <td style="color:var(--text-muted)">${timeStr}</td>
-            <td><span class="badge method-${log.method}">${log.method}</span></td>
+            <td><span class="method-${log.method}">${log.method}</span></td>
             <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${log.path}</td>
             <td class="${log.status >= 500 ? 's-5xx' : (log.status >= 400 ? 's-4xx' : 's-2xx')}">${log.status}</td>
             <td>${log.duration_ms}ms</td>
-            <td class="msg-cell">${cleanString(log.message)}</td>
+            <td style="opacity:0.6; font-size:10px">${cleanString(log.message)}</td>
         `;
         tbody.prepend(tr);
     });
-
-    // Cleanup redundant DOM
-    while (tbody.children.length > 100) tbody.removeChild(tbody.lastChild);
-    
+    while (tbody.children.length > 150) tbody.removeChild(tbody.lastChild);
     updateGlobalStats();
     applyFilter();
 }
 
 function updateGlobalStats() {
-    document.getElementById('stat-total').textContent = `Toplam: ${stats.total}`;
-    document.getElementById('stat-critical').textContent = `🚨 Kritik: ${stats.critical}`;
-    document.getElementById('stat-warning').textContent = `⚠️ Uyarı: ${stats.warnings}`;
-    
+    document.getElementById('stat-total').textContent = `${stats.total} LOG`;
+    document.getElementById('stat-critical').textContent = `🚨 ${stats.critical} KRİTİK`;
+    document.getElementById('stat-warning').textContent = `⚠️ ${stats.warnings} UYARI`;
     const avg = stats.latencies.length ? Math.round(stats.latencies.reduce((a,b)=>a+b,0)/stats.latencies.length) : 0;
-    document.getElementById('stat-latency').textContent = `Ort: ${avg}ms`;
+    const el = document.getElementById('stat-latency');
+    if(el) el.textContent = `AVG: ${avg}ms`;
 }
 
-// ---------- UI CONTROL ----------
-window.togglePause = function() {
-    window.isPaused = !window.isPaused;
-    const btn = document.getElementById('btn-pause');
-    if (btn) {
-        btn.textContent = window.isPaused ? '▶️ Akışı Başlat' : '⏸️ Duraklat';
-        btn.classList.toggle('paused', window.isPaused);
-    }
-    updateStreamBadge();
-};
+// ---------- UI KONTROLLERİ ----------
+function handleTabSwitch(tab) {
+    document.getElementById('tab-login')?.classList.toggle('active', tab === 'login');
+    document.getElementById('tab-register')?.classList.toggle('active', tab === 'register');
+    safeToggle('form-login', tab !== 'login');
+    safeToggle('form-register', tab !== 'register');
+}
 
-window.setFilter = function(mode) {
-    if (window.filterMode === mode) {
-        window.filterMode = 'all';
-        window.isPaused = false;
-    } else {
-        window.filterMode = mode;
-        window.isPaused = true;
+function safeToggle(id, isHidden) {
+    const el = document.getElementById(id);
+    if (el) {
+        if (isHidden) el.classList.add('hidden');
+        else el.classList.remove('hidden');
     }
-    
-    document.getElementById('stat-critical').classList.toggle('active', window.filterMode === '5xx');
-    document.getElementById('stat-warning').classList.toggle('active', window.filterMode === '4xx');
-    
-    updateStreamBadge();
-    applyFilter();
-};
+}
 
 function updateStreamBadge() {
     const el = document.getElementById('log-status');
     if (!el) return;
-    if (window.isPaused) {
-        el.innerHTML = '<span class="pulse" style="background:var(--warning)"></span><span style="color:var(--warning)">DURDURULDU</span>';
-    } else {
-        el.innerHTML = '<span class="pulse"></span><span style="color:var(--success)">CANLI AKIŞ</span>';
-    }
+    el.innerHTML = window.isPaused ? 
+        '<span class="pulse" style="background:var(--warning)"></span><span style="color:var(--warning)">DURDURULDU</span>' :
+        '<span class="pulse"></span><span style="color:var(--success)">STREAMING</span>';
 }
 
 function applyFilter() {
-    const rows = document.querySelectorAll('#log-body tr');
-    rows.forEach(row => {
-        const statusCell = row.cells[3];
-        if (!statusCell) return;
-        const code = parseInt(statusCell.textContent);
+    document.querySelectorAll('#log-body tr').forEach(row => {
+        const code = parseInt(row.cells[3].textContent);
         if (window.filterMode === '5xx') row.style.display = code >= 500 ? '' : 'none';
         else if (window.filterMode === '4xx') row.style.display = (code >= 400 && code < 500) ? '' : 'none';
         else row.style.display = '';
     });
 }
 
-window.switchTab = function(tab) {
-    document.getElementById('tab-login').classList.toggle('active', tab === 'login');
-    document.getElementById('tab-register').classList.toggle('active', tab === 'register');
-    document.getElementById('form-login').classList.toggle('hidden', tab !== 'login');
-    document.getElementById('form-register').classList.toggle('hidden', tab !== 'register');
-};
-
-// ---------- UTILS ----------
 function decodeJwt(t) {
     try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
     catch(e) { return {}; }
 }
 function pad(n) { return String(n).padStart(2, '0'); }
-function cleanString(s) { 
-    if(!s) return '-';
-    return s.replace(/[{}"]/g, '').substring(0, 60); 
-}
+function cleanString(s) { return s ? s.replace(/[{}"]/g, '').substring(0, 40) : '-'; }
 function escapeHTML(str) {
-    if(!str) return '';
-    return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    return str ? str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) : '';
 }
 
-// ---------- BOOTSTRAP ----------
+// ---------- MODERM OLAY DİNLEYİCİLER ----------
 document.addEventListener('DOMContentLoaded', () => {
-    // Initial fetch logs setup
-    const critBadge = document.getElementById('stat-critical');
-    const warnBadge = document.getElementById('stat-warning');
-    if (critBadge) critBadge.onclick = () => window.setFilter('5xx');
-    if (warnBadge) warnBadge.onclick = () => window.setFilter('4xx');
+    console.log("Modern Event Architecture Active");
+
+    // Login & Register
+    document.getElementById('btn-login')?.addEventListener('click', handleUserLogin);
+    document.getElementById('btn-register')?.addEventListener('click', handleUserRegister);
+    
+    // Tabs
+    document.getElementById('btn-tab-login')?.addEventListener('click', () => handleTabSwitch('login'));
+    document.getElementById('btn-tab-register')?.addEventListener('click', () => handleTabSwitch('register'));
+
+    // Logoutlar
+    document.getElementById('btn-portal-logout')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        handlePortalLogout();
+    });
+    document.getElementById('btn-admin-logout')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        handleAdminLogout();
+    });
+
+    // Create Event
+    document.getElementById('btn-create-event')?.addEventListener('click', handleCreateEventSubmission);
+
+    // Refreshers
+    document.getElementById('btn-refresh-events')?.addEventListener('click', handleLoadEvents);
+    document.getElementById('btn-refresh-bookings')?.addEventListener('click', handleLoadBookings);
+
+    // Admin Controls
+    document.getElementById('btn-admin-login')?.addEventListener('click', handleAdminLogin);
+    document.getElementById('btn-pause')?.addEventListener('click', () => {
+        window.isPaused = !window.isPaused;
+        const btn = document.getElementById('btn-pause');
+        if (btn) btn.textContent = window.isPaused ? '▶️ Başlat' : '⏸️ Duraklat';
+        updateStreamBadge();
+    });
+
+    // Delegasyon: Bilet Al butonları dinamik olduğu için ana listeyi dinliyoruz
+    document.getElementById('events-list')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-book');
+        if (btn && !btn.disabled) {
+            handleBookingSubmission(btn.dataset.id, btn.dataset.name);
+        }
+    });
+
+    // Filtreler
+    document.getElementById('stat-critical')?.addEventListener('click', () => {
+        window.filterMode = window.filterMode === '5xx' ? 'all' : '5xx';
+        window.isPaused = (window.filterMode !== 'all');
+        updateStreamBadge();
+        applyFilter();
+    });
+    document.getElementById('stat-warning')?.addEventListener('click', () => {
+        window.filterMode = window.filterMode === '4xx' ? 'all' : '4xx';
+        window.isPaused = (window.filterMode !== 'all');
+        updateStreamBadge();
+        applyFilter();
+    });
 });

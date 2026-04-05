@@ -315,7 +315,7 @@ Sistemin beklenen maksimum yük altında nasıl davrandığını ölçmek için 
 | ~245 Req/s     | 11.44 ms             | **50.37 ms**| **%0.00**  |
 
 **Analiz:** Sistem 500 VU altında tamamen istikrarlı çalışmaktadır. Kayıtlı kullanıcıların giriş, bilet listeleme ve alma işlemleri kusursuzdur. Herhangi bir darboğaz gözlemlenmemiştir.
-![Load Test Grafana Sonuçları](RESIM_LINKINI_BURA_YAPISTIRIN_VEYA_DOSYA_YOLUNU_VERIN)
+![Load Test Grafana Sonuçları](./test_results/load.png)
 
 #### 9.2 Stress Testi - 600 Sanal Kullanıcı (VU)
 Sistemi sınırlarına iten bu testte, kapasite yönetimi ölçülmüştür. 73,192 bilet doğrulama (check) yapılmıştır.
@@ -325,7 +325,7 @@ Sistemi sınırlarına iten bu testte, kapasite yönetimi ölçülmüştür. 73,
 | ~404 Req/s     | **15 ms** (P95) | 1 saniye (P95) | **%0.00**  |
 
 **Mimari Başarı:** Etkili bir mikroservis izolasyon kanıtı! Stress testinde `bcrypt` şifrelemesinin CPU doğası gereği yüksek yük altında **Auth Service (/login)** yanıt sürelerinde bir yokuş oluşturduğu ancak bu "tıkanıklığın" izolasyon sayesinde **Booking Service (/bookings)** tarafını zerre kadar yavaşlatmadığı kanıtlanmıştır. Sıfır Hata (`%0`) ile sistem ayakta kalmıştır.
-![Stress Test Grafana Sonuçları](RESIM_LINKINI_BURA_YAPISTIRIN_VEYA_DOSYA_YOLUNU_VERIN)
+![Stress Test Grafana Sonuçları](./test_results/stress.png)
 
 #### 9.3 Spike (Ani Şok) Testi - 1000 Sanal Kullanıcı (VU)
 Sisteme saniyede >850 istek birdenbire bindirilerek Ani Yük / Çökme testi yapılmıştır. Toplam 86,307 doğrulama yapıldı.
@@ -335,7 +335,7 @@ Sisteme saniyede >850 istek birdenbire bindirilerek Ani Yük / Çökme testi yap
 | ~859 Req/s     | Çok Başarılı | 400 Bad Req. (Kapasite) | **%0.01**  |
 
 **Analiz:** Aniden saldıran 1000 sanal kullanıcı ile "Race Condition" verileri başarıyla test edilmiş, sistemin kontenjan (Available Tickets > 0) logiği başarıyla devreye girmiş ve doğru kodlarla `Capacity Hatasi (400)` fırlatılmıştır. Monolitik olsa darboğaza düşecek sistem, ufak timeoutlar dışı (%0.01) yıkılmaz performans göstermiştir.
-![Spike Test Grafana Sonuçları](RESIM_LINKINI_BURA_YAPISTIRIN_VEYA_DOSYA_YOLUNU_VERIN)
+![Spike Test Grafana Sonuçları](./test_results/spike.png)
 
 ---
 
