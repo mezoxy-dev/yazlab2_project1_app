@@ -71,6 +71,18 @@ services:
     networks:
       - ticket-net
 
+  k6:
+    image: grafana/k6:latest
+    networks:
+      - ticket-net
+    profiles:
+      - testing
+    volumes:
+      - ./load_tests:/k6-scripts
+    environment:
+      - K6_OUT=influxdb=http://influxdb:8086/k6
+      - API_URL=http://dispatcher:8080
+
   db-dispatcher:
     image: mongo:latest
     networks:
